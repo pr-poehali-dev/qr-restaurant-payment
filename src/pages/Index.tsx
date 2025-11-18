@@ -1,17 +1,371 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import Icon from '@/components/ui/icon';
+
+interface DishItem {
+  id: number;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+interface DishSelection {
+  dishId: number;
+  amount: number;
+}
 
 const Index = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isBillLoading, setIsBillLoading] = useState(true);
+  const [showBillDetails, setShowBillDetails] = useState(false);
+  const [showSplitOptions, setShowSplitOptions] = useState(false);
+  const [splitMethod, setSplitMethod] = useState<'count' | 'dishes' | 'amount'>('count');
+  const [guestsCount, setGuestsCount] = useState(2);
+  const [selectedDishes, setSelectedDishes] = useState<DishSelection[]>([]);
+  const [customAmount, setCustomAmount] = useState('');
+  const [showPayment, setShowPayment] = useState(false);
+
+  const billItems: DishItem[] = [
+    { id: 1, name: 'Стейк рибай', price: 2800, quantity: 1 },
+    { id: 2, name: 'Салат Цезарь', price: 650, quantity: 2 },
+    { id: 3, name: 'Паста карбонара', price: 890, quantity: 1 },
+    { id: 4, name: 'Том Ям', price: 750, quantity: 1 },
+    { id: 5, name: 'Тирамису', price: 480, quantity: 2 },
+    { id: 6, name: 'Капучино', price: 280, quantity: 3 }
+  ];
+
+  const totalAmount = billItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   const previousBills = [
     { id: 1, restaurant: 'Ресторан "Bella Vista"', date: '15 ноя 2025', amount: 4250, status: 'Оплачено' },
     { id: 2, restaurant: 'Кафе "Coffee Dreams"', date: '12 ноя 2025', amount: 890, status: 'Оплачено' },
     { id: 3, restaurant: 'Ресторан "Токио"', date: '8 ноя 2025', amount: 5670, status: 'Оплачено' }
   ];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsBillLoading(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleDishToggle = (dishId: number, checked: boolean) => {
+    const dish = billItems.find(d => d.id === dishId);
+    if (!dish) return;
+
+    if (checked) {
+      setSelectedDishes([...selectedDishes, { dishId, amount: dish.price * dish.quantity }]);
+    } else {
+      setSelectedDishes(selectedDishes.filter(d => d.dishId !== dishId));
+    }
+  };
+
+  const handleDishAmountChange = (dishId: number, amount: number) => {
+    setSelectedDishes(
+      selectedDishes.map(d => d.dishId === dishId ? { ...d, amount } : d)
+    );
+  };
+
+  const calculatePaymentAmount = () => {
+    if (splitMethod === 'count') {
+      return Math.round(totalAmount / guestsCount);
+    } else if (splitMethod === 'dishes') {
+      return selectedDishes.reduce((sum, d) => sum + d.amount, 0);
+    } else {
+      return Number(customAmount) || 0;
+    }
+  };
+
+  const handlePayment = () => {
+    const amount = calculatePaymentAmount();
+    if (amount > 0) {
+      setShowPayment(true);
+    }
+  };
+
+  if (showPayment) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <Button variant="ghost" size="icon" onClick={() => setShowPayment(false)}>
+            <Icon name="ArrowLeft" size={24} />
+          </Button>
+          <h1 className="text-lg font-bold">Оплата</h1>
+          <div className="w-10" />
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
+          <div className="w-20 h-20 bg-gradient-to-br from-primary to-orange-600 rounded-full flex items-center justify-center animate-pulse">
+            <Icon name="CreditCard" size={40} className="text-white" />
+          </div>
+          
+          <div className="text-center space-y-2">
+            <h2 className="text-3xl font-bold">{calculatePaymentAmount().toLocaleString('ru-RU')} ₽</h2>
+            <p className="text-muted-foreground">К оплате</p>
+          </div>
+
+          <Card className="w-full max-w-md p-6 space-y-4">
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Номер карты</label>
+              <Input placeholder="0000 0000 0000 0000" className="text-lg" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Срок</label>
+                <Input placeholder="ММ/ГГ" />
+              </div>
+              <div className="space-y-3">
+                <label className="text-sm font-medium">CVV</label>
+                <Input placeholder="000" type="password" maxLength={3} />
+              </div>
+            </div>
+
+            <Separator className="my-4" />
+
+            <Button className="w-full h-12 text-lg font-semibold" size="lg">
+              Оплатить {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
+            </Button>
+          </Card>
+
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <Icon name="Lock" size={16} />
+            <span>Защищённая оплата через ZenZero</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (showSplitOptions) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <Button variant="ghost" size="icon" onClick={() => setShowSplitOptions(false)}>
+            <Icon name="ArrowLeft" size={24} />
+          </Button>
+          <h1 className="text-lg font-bold">Разделить счёт</h1>
+          <div className="w-10" />
+        </div>
+
+        <Tabs value={splitMethod} onValueChange={(v) => setSplitMethod(v as any)} className="flex-1 flex flex-col">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="count">По гостям</TabsTrigger>
+            <TabsTrigger value="dishes">По блюдам</TabsTrigger>
+            <TabsTrigger value="amount">По сумме</TabsTrigger>
+          </TabsList>
+
+          <div className="flex-1 overflow-y-auto">
+            <TabsContent value="count" className="p-4 space-y-6">
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-medium">Количество гостей</span>
+                  <div className="flex items-center space-x-3">
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => setGuestsCount(Math.max(2, guestsCount - 1))}
+                    >
+                      <Icon name="Minus" size={18} />
+                    </Button>
+                    <span className="text-2xl font-bold w-12 text-center">{guestsCount}</span>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => setGuestsCount(guestsCount + 1)}
+                    >
+                      <Icon name="Plus" size={18} />
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Общая сумма</span>
+                    <span className="font-medium">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                  <div className="flex justify-between text-lg">
+                    <span className="font-semibold">На каждого</span>
+                    <span className="font-bold text-primary">{Math.round(totalAmount / guestsCount).toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="dishes" className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground px-2">Выберите блюда, которые вы оплачиваете</p>
+              
+              {billItems.map((dish) => {
+                const selection = selectedDishes.find(d => d.dishId === dish.id);
+                const isChecked = !!selection;
+                const dishTotal = dish.price * dish.quantity;
+
+                return (
+                  <Card key={dish.id} className="p-4 space-y-3">
+                    <div className="flex items-start space-x-3">
+                      <Checkbox 
+                        checked={isChecked}
+                        onCheckedChange={(checked) => handleDishToggle(dish.id, checked as boolean)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">{dish.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {dish.price.toLocaleString('ru-RU')} ₽ × {dish.quantity}
+                            </p>
+                          </div>
+                          <p className="font-bold">{dishTotal.toLocaleString('ru-RU')} ₽</p>
+                        </div>
+
+                        {isChecked && (
+                          <div className="mt-3 space-y-2">
+                            <label className="text-xs text-muted-foreground">Оплачиваю</label>
+                            <div className="flex items-center space-x-2">
+                              <Input 
+                                type="number"
+                                value={selection.amount}
+                                onChange={(e) => handleDishAmountChange(dish.id, Number(e.target.value))}
+                                max={dishTotal}
+                                className="h-9"
+                              />
+                              <span className="text-sm whitespace-nowrap">из {dishTotal} ₽</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+
+              <Card className="p-4 bg-secondary/30">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Итого к оплате</span>
+                  <span className="text-xl font-bold text-primary">
+                    {selectedDishes.reduce((sum, d) => sum + d.amount, 0).toLocaleString('ru-RU')} ₽
+                  </span>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="amount" className="p-4 space-y-6">
+              <Card className="p-6 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Введите сумму к оплате</label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      placeholder="0"
+                      className="text-2xl font-bold h-16 pr-12"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xl font-bold text-muted-foreground">₽</span>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Общая сумма счёта</span>
+                  <span className="font-medium">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+            </TabsContent>
+          </div>
+
+          <div className="p-4 border-t bg-white">
+            <Button 
+              className="w-full h-14 text-lg font-semibold"
+              size="lg"
+              onClick={handlePayment}
+              disabled={calculatePaymentAmount() === 0}
+            >
+              Оплатить {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
+            </Button>
+          </div>
+        </Tabs>
+      </div>
+    );
+  }
+
+  if (showBillDetails) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <Button variant="ghost" size="icon" onClick={() => setShowBillDetails(false)}>
+            <Icon name="ArrowLeft" size={24} />
+          </Button>
+          <h1 className="text-lg font-bold">Детали счёта</h1>
+          <div className="w-10" />
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {billItems.map((item) => (
+            <Card key={item.id} className="p-4">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <p className="font-medium">{item.name}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {item.price.toLocaleString('ru-RU')} ₽ × {item.quantity}
+                  </p>
+                </div>
+                <p className="font-bold text-lg">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</p>
+              </div>
+            </Card>
+          ))}
+
+          <Separator className="my-4" />
+
+          <Card className="p-4 bg-secondary/30">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Сумма</span>
+                <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Сервисный сбор</span>
+                <span>0 ₽</span>
+              </div>
+              <Separator className="my-2" />
+              <div className="flex justify-between text-xl">
+                <span className="font-bold">Итого</span>
+                <span className="font-bold text-primary">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div className="p-4 border-t space-y-3 bg-white">
+          <Button 
+            className="w-full h-14 text-lg font-semibold"
+            size="lg"
+            onClick={() => setShowPayment(true)}
+          >
+            Оплатить целиком {totalAmount.toLocaleString('ru-RU')} ₽
+          </Button>
+          <Button 
+            className="w-full h-14 text-lg font-semibold"
+            variant="outline"
+            size="lg"
+            onClick={() => setShowSplitOptions(true)}
+          >
+            Разделить счёт
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -51,24 +405,53 @@ const Index = () => {
         </div>
 
         <div className="flex-1 bg-white pt-16 px-4 md:px-6 pb-6 space-y-4">
-          <Card className="border-2 border-primary bg-secondary/30 p-6 rounded-2xl">
-            <div className="flex flex-col items-center space-y-3">
-              <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center">
-                <Icon name="AlertCircle" size={32} className="text-primary" />
+          {isBillLoading ? (
+            <Card className="border-2 border-primary bg-secondary/30 p-6 rounded-2xl">
+              <div className="flex flex-col items-center space-y-3">
+                <div className="w-16 h-16 bg-secondary rounded-full flex items-center justify-center animate-pulse">
+                  <Icon name="Loader2" size={32} className="text-primary animate-spin" />
+                </div>
+                <div className="text-center space-y-1">
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">Загрузка счёта</h2>
+                  <p className="text-sm md:text-base text-gray-600">Ваш счёт скоро появится</p>
+                </div>
               </div>
-              <div className="text-center space-y-1">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Загрузка счёта</h2>
-                <p className="text-sm md:text-base text-gray-600">Ваш счёт скоро появится</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          ) : (
+            <>
+              <Card 
+                className="border-2 border-green-500 bg-green-50 p-6 rounded-2xl cursor-pointer hover:shadow-lg transition-shadow"
+                onClick={() => setShowBillDetails(true)}
+              >
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                    <Icon name="CheckCircle2" size={32} className="text-green-600" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-900">Счёт готов</h2>
+                    <p className="text-3xl font-bold text-primary">{totalAmount.toLocaleString('ru-RU')} ₽</p>
+                    <p className="text-sm text-gray-600">Нажмите для просмотра деталей</p>
+                  </div>
+                </div>
+              </Card>
 
-          <Button 
-            className="w-full h-14 rounded-2xl text-base md:text-lg font-semibold border-2 border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-            variant="outline"
-          >
-            Оплатить счёт целиком
-          </Button>
+              <Button 
+                className="w-full h-14 rounded-2xl text-base md:text-lg font-semibold"
+                onClick={() => setShowPayment(true)}
+              >
+                Оплатить счёт целиком
+              </Button>
+
+              <Button 
+                className="w-full h-14 rounded-2xl text-base md:text-lg font-semibold"
+                variant="outline"
+                onClick={() => setShowSplitOptions(true)}
+              >
+                <Icon name="Users" size={20} className="mr-2" />
+                Разделить счёт
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
