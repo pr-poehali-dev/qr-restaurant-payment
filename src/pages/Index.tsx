@@ -6,6 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 
 interface DishItem {
@@ -13,12 +14,17 @@ interface DishItem {
   name: string;
   price: number;
   quantity: number;
+  is_locked?: boolean;
+  remaining_amount?: number;
 }
 
 interface DishSelection {
   dishId: number;
   amount: number;
 }
+
+const BILL_ID = 1;
+const API_URL = 'https://functions.poehali.dev/7202c0b7-6e92-4f66-9534-53a9a90bfc74';
 
 const Index = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -32,21 +38,13 @@ const Index = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [tipPercentage, setTipPercentage] = useState<number>(10);
   const [customTip, setCustomTip] = useState('');
-  const [isCustomTip, setIsCustomTip] = useState(false);
   const [splitTipPercentage, setSplitTipPercentage] = useState<number>(10);
   const [splitCustomTip, setSplitCustomTip] = useState('');
-  const [isSplitCustomTip, setIsSplitCustomTip] = useState(false);
-
-  const billItems: DishItem[] = [
-    { id: 1, name: 'Стейк рибай', price: 2800, quantity: 1 },
-    { id: 2, name: 'Салат Цезарь', price: 650, quantity: 2 },
-    { id: 3, name: 'Паста карбонара', price: 890, quantity: 1 },
-    { id: 4, name: 'Том Ям', price: 750, quantity: 1 },
-    { id: 5, name: 'Тирамису', price: 480, quantity: 2 },
-    { id: 6, name: 'Капучино', price: 280, quantity: 3 }
-  ];
-
-  const totalAmount = billItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const [email, setEmail] = useState('');
+  const [splitEmail, setSplitEmail] = useState('');
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const [billItems, setBillItems] = useState<DishItem[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
 
   const previousBills = [
     { id: 1, restaurant: 'Ресторан "Bella Vista"', date: '15 ноя 2025', amount: 4250, status: 'Оплачено' },
@@ -54,20 +52,93 @@ const Index = () => {
     { id: 3, restaurant: 'Ресторан "Токио"', date: '8 ноя 2025', amount: 5670, status: 'Оплачено' }
   ];
 
+  const fetchBillData = async () => {
+    try {
+      const response = await fetch(`${API_URL}?bill_id=${BILL_ID}`, {
+        headers: {
+          'X-Session-Id': sessionId
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setBillItems(data.items.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          is_locked: item.is_locked,
+          remaining_amount: item.remaining_amount
+        })));
+        setTotalAmount(data.items.reduce((sum: number, item: any) => sum + item.remaining_amount, 0));
+      }
+    } catch (error) {
+      console.error('Failed to fetch bill:', error);
+    }
+  };
+
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const initBill = async () => {
+      await fetchBillData();
       setIsBillLoading(false);
-    }, 2000);
-    return () => clearTimeout(timer);
+    };
+    
+    const timer = setTimeout(initBill, 2000);
+    
+    const interval = setInterval(fetchBillData, 3000);
+    
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, []);
 
-  const handleDishToggle = (dishId: number, checked: boolean) => {
+  const lockItems = async (itemIds: number[]) => {
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId
+        },
+        body: JSON.stringify({
+          action: 'lock_items',
+          bill_id: BILL_ID,
+          item_ids: itemIds
+        })
+      });
+    } catch (error) {
+      console.error('Failed to lock items:', error);
+    }
+  };
+
+  const unlockItems = async (itemIds: number[]) => {
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId
+        },
+        body: JSON.stringify({
+          action: 'unlock_items',
+          item_ids: itemIds
+        })
+      });
+    } catch (error) {
+      console.error('Failed to unlock items:', error);
+    }
+  };
+
+  const handleDishToggle = async (dishId: number, checked: boolean) => {
     const dish = billItems.find(d => d.id === dishId);
     if (!dish) return;
 
     if (checked) {
-      setSelectedDishes([...selectedDishes, { dishId, amount: dish.price * dish.quantity }]);
+      await lockItems([dishId]);
+      setSelectedDishes([...selectedDishes, { dishId, amount: dish.remaining_amount || 0 }]);
     } else {
+      await unlockItems([dishId]);
       setSelectedDishes(selectedDishes.filter(d => d.dishId !== dishId));
     }
   };
@@ -79,7 +150,7 @@ const Index = () => {
   };
 
   const calculateTipAmount = () => {
-    if (isCustomTip) {
+    if (customTip) {
       return Number(customTip) || 0;
     }
     return Math.round(totalAmount * (tipPercentage / 100));
@@ -87,7 +158,7 @@ const Index = () => {
 
   const calculateSplitTipAmount = () => {
     const baseAmount = calculateSplitBaseAmount();
-    if (isSplitCustomTip) {
+    if (splitCustomTip) {
       return Number(splitCustomTip) || 0;
     }
     return Math.round(baseAmount * (splitTipPercentage / 100));
@@ -175,7 +246,11 @@ const Index = () => {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
-          <Button variant="ghost" size="icon" onClick={() => setShowSplitOptions(false)}>
+          <Button variant="ghost" size="icon" onClick={() => {
+            setShowSplitOptions(false);
+            unlockItems(selectedDishes.map(d => d.dishId));
+            setSelectedDishes([]);
+          }}>
             <Icon name="ArrowLeft" size={24} />
           </Button>
           <h1 className="text-lg font-bold">Разделить счёт</h1>
@@ -196,12 +271,12 @@ const Index = () => {
                 {billItems.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm py-1">
                     <span>{item.name} × {item.quantity}</span>
-                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                    <span className="font-medium">{(item.remaining_amount || 0).toLocaleString('ru-RU')} ₽</span>
                   </div>
                 ))}
                 <Separator />
                 <div className="flex justify-between font-semibold">
-                  <span>Сумма счёта</span>
+                  <span>Осталось оплатить</span>
                   <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
                 </div>
               </Card>
@@ -241,60 +316,52 @@ const Index = () => {
               <Card className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Чаевые</span>
-                  {!isSplitCustomTip && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setIsSplitCustomTip(true)}
-                    >
-                      Своя сумма
-                    </Button>
-                  )}
                 </div>
 
-                {isSplitCustomTip ? (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <Input 
-                        type="number"
-                        value={splitCustomTip}
-                        onChange={(e) => setSplitCustomTip(e.target.value)}
-                        placeholder="0"
-                        className="pr-10"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
+                <div className="grid grid-cols-3 gap-2">
+                  {[10, 15, 20].map((percent) => (
+                    <Button
+                      key={percent}
+                      variant={splitTipPercentage === percent && !splitCustomTip ? "default" : "outline"}
                       onClick={() => {
-                        setIsSplitCustomTip(false);
+                        setSplitTipPercentage(percent);
                         setSplitCustomTip('');
                       }}
-                      className="w-full"
+                      className="h-12"
                     >
-                      Выбрать процент
+                      {percent}%
                     </Button>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Своя сумма</Label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      value={splitCustomTip}
+                      onChange={(e) => setSplitCustomTip(e.target.value)}
+                      placeholder="0"
+                      className="pr-10"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {[10, 15, 20].map((percent) => (
-                      <Button
-                        key={percent}
-                        variant={splitTipPercentage === percent ? "default" : "outline"}
-                        onClick={() => setSplitTipPercentage(percent)}
-                        className="h-12"
-                      >
-                        {percent}%
-                      </Button>
-                    ))}
-                  </div>
-                )}
+                </div>
 
                 <div className="flex justify-between text-sm pt-2">
                   <span className="text-muted-foreground">Сумма чаевых</span>
                   <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
                 </div>
+              </Card>
+
+              <Card className="p-4 space-y-3">
+                <Label className="text-sm font-medium">Отправить чек на почту</Label>
+                <Input 
+                  type="email"
+                  value={splitEmail}
+                  onChange={(e) => setSplitEmail(e.target.value)}
+                  placeholder="example@mail.ru"
+                />
               </Card>
 
               <Card className="p-4 bg-secondary/30">
@@ -313,12 +380,12 @@ const Index = () => {
                 {billItems.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm py-1">
                     <span>{item.name} × {item.quantity}</span>
-                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                    <span className="font-medium">{(item.remaining_amount || 0).toLocaleString('ru-RU')} ₽</span>
                   </div>
                 ))}
                 <Separator />
                 <div className="flex justify-between font-semibold">
-                  <span>Сумма счёта</span>
+                  <span>Осталось оплатить</span>
                   <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
                 </div>
               </Card>
@@ -328,7 +395,37 @@ const Index = () => {
               {billItems.map((dish) => {
                 const selection = selectedDishes.find(d => d.dishId === dish.id);
                 const isChecked = !!selection;
-                const dishTotal = dish.price * dish.quantity;
+                const dishRemaining = dish.remaining_amount || 0;
+
+                if (dish.is_locked) {
+                  return (
+                    <Card key={dish.id} className="p-4 bg-gray-100">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                          <Icon name="Clock" size={20} className="text-yellow-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-700">{dish.name}</p>
+                          <p className="text-sm text-yellow-600">Другой клиент в процессе оплаты</p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                }
+
+                if (dishRemaining === 0) {
+                  return (
+                    <Card key={dish.id} className="p-4 bg-green-50">
+                      <div className="flex items-center space-x-3">
+                        <Icon name="CheckCircle2" size={20} className="text-green-600" />
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-700">{dish.name}</p>
+                          <p className="text-sm text-green-600">Оплачено</p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                }
 
                 return (
                   <Card key={dish.id} className="p-4 space-y-3">
@@ -346,7 +443,7 @@ const Index = () => {
                               {dish.price.toLocaleString('ru-RU')} ₽ × {dish.quantity}
                             </p>
                           </div>
-                          <p className="font-bold">{dishTotal.toLocaleString('ru-RU')} ₽</p>
+                          <p className="font-bold">{dishRemaining.toLocaleString('ru-RU')} ₽</p>
                         </div>
 
                         {isChecked && (
@@ -357,10 +454,10 @@ const Index = () => {
                                 type="number"
                                 value={selection.amount}
                                 onChange={(e) => handleDishAmountChange(dish.id, Number(e.target.value))}
-                                max={dishTotal}
+                                max={dishRemaining}
                                 className="h-9"
                               />
-                              <span className="text-sm whitespace-nowrap">из {dishTotal} ₽</span>
+                              <span className="text-sm whitespace-nowrap">из {dishRemaining} ₽</span>
                             </div>
                           </div>
                         )}
@@ -373,60 +470,52 @@ const Index = () => {
               <Card className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Чаевые</span>
-                  {!isSplitCustomTip && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setIsSplitCustomTip(true)}
-                    >
-                      Своя сумма
-                    </Button>
-                  )}
                 </div>
 
-                {isSplitCustomTip ? (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <Input 
-                        type="number"
-                        value={splitCustomTip}
-                        onChange={(e) => setSplitCustomTip(e.target.value)}
-                        placeholder="0"
-                        className="pr-10"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
+                <div className="grid grid-cols-3 gap-2">
+                  {[10, 15, 20].map((percent) => (
+                    <Button
+                      key={percent}
+                      variant={splitTipPercentage === percent && !splitCustomTip ? "default" : "outline"}
                       onClick={() => {
-                        setIsSplitCustomTip(false);
+                        setSplitTipPercentage(percent);
                         setSplitCustomTip('');
                       }}
-                      className="w-full"
+                      className="h-12"
                     >
-                      Выбрать процент
+                      {percent}%
                     </Button>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Своя сумма</Label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      value={splitCustomTip}
+                      onChange={(e) => setSplitCustomTip(e.target.value)}
+                      placeholder="0"
+                      className="pr-10"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {[10, 15, 20].map((percent) => (
-                      <Button
-                        key={percent}
-                        variant={splitTipPercentage === percent ? "default" : "outline"}
-                        onClick={() => setSplitTipPercentage(percent)}
-                        className="h-12"
-                      >
-                        {percent}%
-                      </Button>
-                    ))}
-                  </div>
-                )}
+                </div>
 
                 <div className="flex justify-between text-sm pt-2">
                   <span className="text-muted-foreground">Сумма чаевых</span>
                   <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
                 </div>
+              </Card>
+
+              <Card className="p-4 space-y-3">
+                <Label className="text-sm font-medium">Отправить чек на почту</Label>
+                <Input 
+                  type="email"
+                  value={splitEmail}
+                  onChange={(e) => setSplitEmail(e.target.value)}
+                  placeholder="example@mail.ru"
+                />
               </Card>
 
               <Card className="p-4 bg-secondary/30">
@@ -445,12 +534,12 @@ const Index = () => {
                 {billItems.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm py-1">
                     <span>{item.name} × {item.quantity}</span>
-                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                    <span className="font-medium">{(item.remaining_amount || 0).toLocaleString('ru-RU')} ₽</span>
                   </div>
                 ))}
                 <Separator />
                 <div className="flex justify-between font-semibold">
-                  <span>Сумма счёта</span>
+                  <span>Осталось оплатить</span>
                   <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
                 </div>
               </Card>
@@ -474,60 +563,52 @@ const Index = () => {
               <Card className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Чаевые</span>
-                  {!isSplitCustomTip && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setIsSplitCustomTip(true)}
-                    >
-                      Своя сумма
-                    </Button>
-                  )}
                 </div>
 
-                {isSplitCustomTip ? (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <Input 
-                        type="number"
-                        value={splitCustomTip}
-                        onChange={(e) => setSplitCustomTip(e.target.value)}
-                        placeholder="0"
-                        className="pr-10"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
+                <div className="grid grid-cols-3 gap-2">
+                  {[10, 15, 20].map((percent) => (
+                    <Button
+                      key={percent}
+                      variant={splitTipPercentage === percent && !splitCustomTip ? "default" : "outline"}
                       onClick={() => {
-                        setIsSplitCustomTip(false);
+                        setSplitTipPercentage(percent);
                         setSplitCustomTip('');
                       }}
-                      className="w-full"
+                      className="h-12"
                     >
-                      Выбрать процент
+                      {percent}%
                     </Button>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Своя сумма</Label>
+                  <div className="relative">
+                    <Input 
+                      type="number"
+                      value={splitCustomTip}
+                      onChange={(e) => setSplitCustomTip(e.target.value)}
+                      placeholder="0"
+                      className="pr-10"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {[10, 15, 20].map((percent) => (
-                      <Button
-                        key={percent}
-                        variant={splitTipPercentage === percent ? "default" : "outline"}
-                        onClick={() => setSplitTipPercentage(percent)}
-                        className="h-12"
-                      >
-                        {percent}%
-                      </Button>
-                    ))}
-                  </div>
-                )}
+                </div>
 
                 <div className="flex justify-between text-sm pt-2">
                   <span className="text-muted-foreground">Сумма чаевых</span>
                   <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
                 </div>
+              </Card>
+
+              <Card className="p-4 space-y-3">
+                <Label className="text-sm font-medium">Отправить чек на почту</Label>
+                <Input 
+                  type="email"
+                  value={splitEmail}
+                  onChange={(e) => setSplitEmail(e.target.value)}
+                  placeholder="example@mail.ru"
+                />
               </Card>
 
               <Card className="p-4 bg-secondary/30">
@@ -577,7 +658,7 @@ const Index = () => {
                     {item.price.toLocaleString('ru-RU')} ₽ × {item.quantity}
                   </p>
                 </div>
-                <p className="font-bold text-lg">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</p>
+                <p className="font-bold text-lg">{(item.remaining_amount || 0).toLocaleString('ru-RU')} ₽</p>
               </div>
             </Card>
           ))}
@@ -587,60 +668,52 @@ const Index = () => {
           <Card className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <span className="font-medium">Чаевые</span>
-              {!isCustomTip && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setIsCustomTip(true)}
-                >
-                  Своя сумма
-                </Button>
-              )}
             </div>
 
-            {isCustomTip ? (
-              <div className="space-y-3">
-                <div className="relative">
-                  <Input 
-                    type="number"
-                    value={customTip}
-                    onChange={(e) => setCustomTip(e.target.value)}
-                    placeholder="0"
-                    className="pr-10"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
+            <div className="grid grid-cols-3 gap-2">
+              {[10, 15, 20].map((percent) => (
+                <Button
+                  key={percent}
+                  variant={tipPercentage === percent && !customTip ? "default" : "outline"}
                   onClick={() => {
-                    setIsCustomTip(false);
+                    setTipPercentage(percent);
                     setCustomTip('');
                   }}
-                  className="w-full"
+                  className="h-12"
                 >
-                  Выбрать процент
+                  {percent}%
                 </Button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Своя сумма</Label>
+              <div className="relative">
+                <Input 
+                  type="number"
+                  value={customTip}
+                  onChange={(e) => setCustomTip(e.target.value)}
+                  placeholder="0"
+                  className="pr-10"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
               </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {[10, 15, 20].map((percent) => (
-                  <Button
-                    key={percent}
-                    variant={tipPercentage === percent ? "default" : "outline"}
-                    onClick={() => setTipPercentage(percent)}
-                    className="h-12"
-                  >
-                    {percent}%
-                  </Button>
-                ))}
-              </div>
-            )}
+            </div>
 
             <div className="flex justify-between text-sm pt-2">
               <span className="text-muted-foreground">Сумма чаевых</span>
               <span className="font-medium">{calculateTipAmount().toLocaleString('ru-RU')} ₽</span>
             </div>
+          </Card>
+
+          <Card className="p-4 space-y-3">
+            <Label className="text-sm font-medium">Отправить чек на почту</Label>
+            <Input 
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@mail.ru"
+            />
           </Card>
 
           <Card className="p-4 bg-secondary/30">

@@ -1,0 +1,36 @@
+{
+  "tests": [
+    {
+      "name": "Get bill details",
+      "method": "GET",
+      "path": "/?bill_id=1",
+      "headers": {
+        "X-Session-Id": "test-session-123"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "bill": {},
+        "items": []
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Lock items",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-Session-Id": "test-session-123"
+      },
+      "body": {
+        "action": "lock_items",
+        "bill_id": 1,
+        "item_ids": [1, 2]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
