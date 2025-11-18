@@ -30,6 +30,12 @@ const Index = () => {
   const [selectedDishes, setSelectedDishes] = useState<DishSelection[]>([]);
   const [customAmount, setCustomAmount] = useState('');
   const [showPayment, setShowPayment] = useState(false);
+  const [tipPercentage, setTipPercentage] = useState<number>(10);
+  const [customTip, setCustomTip] = useState('');
+  const [isCustomTip, setIsCustomTip] = useState(false);
+  const [splitTipPercentage, setSplitTipPercentage] = useState<number>(10);
+  const [splitCustomTip, setSplitCustomTip] = useState('');
+  const [isSplitCustomTip, setIsSplitCustomTip] = useState(false);
 
   const billItems: DishItem[] = [
     { id: 1, name: 'Стейк рибай', price: 2800, quantity: 1 },
@@ -72,7 +78,22 @@ const Index = () => {
     );
   };
 
-  const calculatePaymentAmount = () => {
+  const calculateTipAmount = () => {
+    if (isCustomTip) {
+      return Number(customTip) || 0;
+    }
+    return Math.round(totalAmount * (tipPercentage / 100));
+  };
+
+  const calculateSplitTipAmount = () => {
+    const baseAmount = calculateSplitBaseAmount();
+    if (isSplitCustomTip) {
+      return Number(splitCustomTip) || 0;
+    }
+    return Math.round(baseAmount * (splitTipPercentage / 100));
+  };
+
+  const calculateSplitBaseAmount = () => {
     if (splitMethod === 'count') {
       return Math.round(totalAmount / guestsCount);
     } else if (splitMethod === 'dishes') {
@@ -80,6 +101,13 @@ const Index = () => {
     } else {
       return Number(customAmount) || 0;
     }
+  };
+
+  const calculatePaymentAmount = () => {
+    if (showSplitOptions) {
+      return calculateSplitBaseAmount() + calculateSplitTipAmount();
+    }
+    return totalAmount + calculateTipAmount();
   };
 
   const handlePayment = () => {
@@ -163,6 +191,21 @@ const Index = () => {
 
           <div className="flex-1 overflow-y-auto">
             <TabsContent value="count" className="p-4 space-y-6">
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold text-sm text-muted-foreground">Детали счёта</h3>
+                {billItems.map((item) => (
+                  <div key={item.id} className="flex justify-between text-sm py-1">
+                    <span>{item.name} × {item.quantity}</span>
+                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                ))}
+                <Separator />
+                <div className="flex justify-between font-semibold">
+                  <span>Сумма счёта</span>
+                  <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
               <Card className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-lg font-medium">Количество гостей</span>
@@ -189,18 +232,97 @@ const Index = () => {
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Общая сумма</span>
-                    <span className="font-medium">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                    <span className="text-muted-foreground">На каждого</span>
+                    <span className="font-medium">{Math.round(totalAmount / guestsCount).toLocaleString('ru-RU')} ₽</span>
                   </div>
-                  <div className="flex justify-between text-lg">
-                    <span className="font-semibold">На каждого</span>
-                    <span className="font-bold text-primary">{Math.round(totalAmount / guestsCount).toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
+              <Card className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Чаевые</span>
+                  {!isSplitCustomTip && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setIsSplitCustomTip(true)}
+                    >
+                      Своя сумма
+                    </Button>
+                  )}
+                </div>
+
+                {isSplitCustomTip ? (
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Input 
+                        type="number"
+                        value={splitCustomTip}
+                        onChange={(e) => setSplitCustomTip(e.target.value)}
+                        placeholder="0"
+                        className="pr-10"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        setIsSplitCustomTip(false);
+                        setSplitCustomTip('');
+                      }}
+                      className="w-full"
+                    >
+                      Выбрать процент
+                    </Button>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {[10, 15, 20].map((percent) => (
+                      <Button
+                        key={percent}
+                        variant={splitTipPercentage === percent ? "default" : "outline"}
+                        onClick={() => setSplitTipPercentage(percent)}
+                        className="h-12"
+                      >
+                        {percent}%
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-between text-sm pt-2">
+                  <span className="text-muted-foreground">Сумма чаевых</span>
+                  <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-secondary/30">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Итого к оплате</span>
+                  <span className="text-xl font-bold text-primary">
+                    {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
+                  </span>
                 </div>
               </Card>
             </TabsContent>
 
             <TabsContent value="dishes" className="p-4 space-y-4">
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold text-sm text-muted-foreground">Детали счёта</h3>
+                {billItems.map((item) => (
+                  <div key={item.id} className="flex justify-between text-sm py-1">
+                    <span>{item.name} × {item.quantity}</span>
+                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                ))}
+                <Separator />
+                <div className="flex justify-between font-semibold">
+                  <span>Сумма счёта</span>
+                  <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
               <p className="text-sm text-muted-foreground px-2">Выберите блюда, которые вы оплачиваете</p>
               
               {billItems.map((dish) => {
@@ -248,17 +370,91 @@ const Index = () => {
                 );
               })}
 
+              <Card className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Чаевые</span>
+                  {!isSplitCustomTip && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setIsSplitCustomTip(true)}
+                    >
+                      Своя сумма
+                    </Button>
+                  )}
+                </div>
+
+                {isSplitCustomTip ? (
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Input 
+                        type="number"
+                        value={splitCustomTip}
+                        onChange={(e) => setSplitCustomTip(e.target.value)}
+                        placeholder="0"
+                        className="pr-10"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        setIsSplitCustomTip(false);
+                        setSplitCustomTip('');
+                      }}
+                      className="w-full"
+                    >
+                      Выбрать процент
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {[10, 15, 20].map((percent) => (
+                      <Button
+                        key={percent}
+                        variant={splitTipPercentage === percent ? "default" : "outline"}
+                        onClick={() => setSplitTipPercentage(percent)}
+                        className="h-12"
+                      >
+                        {percent}%
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-between text-sm pt-2">
+                  <span className="text-muted-foreground">Сумма чаевых</span>
+                  <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
               <Card className="p-4 bg-secondary/30">
                 <div className="flex justify-between items-center">
                   <span className="font-semibold">Итого к оплате</span>
                   <span className="text-xl font-bold text-primary">
-                    {selectedDishes.reduce((sum, d) => sum + d.amount, 0).toLocaleString('ru-RU')} ₽
+                    {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
                   </span>
                 </div>
               </Card>
             </TabsContent>
 
             <TabsContent value="amount" className="p-4 space-y-6">
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold text-sm text-muted-foreground">Детали счёта</h3>
+                {billItems.map((item) => (
+                  <div key={item.id} className="flex justify-between text-sm py-1">
+                    <span>{item.name} × {item.quantity}</span>
+                    <span className="font-medium">{(item.price * item.quantity).toLocaleString('ru-RU')} ₽</span>
+                  </div>
+                ))}
+                <Separator />
+                <div className="flex justify-between font-semibold">
+                  <span>Сумма счёта</span>
+                  <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
               <Card className="p-6 space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Введите сумму к оплате</label>
@@ -273,12 +469,73 @@ const Index = () => {
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xl font-bold text-muted-foreground">₽</span>
                   </div>
                 </div>
+              </Card>
 
-                <Separator />
+              <Card className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Чаевые</span>
+                  {!isSplitCustomTip && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setIsSplitCustomTip(true)}
+                    >
+                      Своя сумма
+                    </Button>
+                  )}
+                </div>
 
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Общая сумма счёта</span>
-                  <span className="font-medium">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                {isSplitCustomTip ? (
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Input 
+                        type="number"
+                        value={splitCustomTip}
+                        onChange={(e) => setSplitCustomTip(e.target.value)}
+                        placeholder="0"
+                        className="pr-10"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        setIsSplitCustomTip(false);
+                        setSplitCustomTip('');
+                      }}
+                      className="w-full"
+                    >
+                      Выбрать процент
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {[10, 15, 20].map((percent) => (
+                      <Button
+                        key={percent}
+                        variant={splitTipPercentage === percent ? "default" : "outline"}
+                        onClick={() => setSplitTipPercentage(percent)}
+                        className="h-12"
+                      >
+                        {percent}%
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-between text-sm pt-2">
+                  <span className="text-muted-foreground">Сумма чаевых</span>
+                  <span className="font-medium">{calculateSplitTipAmount().toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-secondary/30">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Итого к оплате</span>
+                  <span className="text-xl font-bold text-primary">
+                    {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
+                  </span>
                 </div>
               </Card>
             </TabsContent>
@@ -327,6 +584,65 @@ const Index = () => {
 
           <Separator className="my-4" />
 
+          <Card className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Чаевые</span>
+              {!isCustomTip && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setIsCustomTip(true)}
+                >
+                  Своя сумма
+                </Button>
+              )}
+            </div>
+
+            {isCustomTip ? (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Input 
+                    type="number"
+                    value={customTip}
+                    onChange={(e) => setCustomTip(e.target.value)}
+                    placeholder="0"
+                    className="pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">₽</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    setIsCustomTip(false);
+                    setCustomTip('');
+                  }}
+                  className="w-full"
+                >
+                  Выбрать процент
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {[10, 15, 20].map((percent) => (
+                  <Button
+                    key={percent}
+                    variant={tipPercentage === percent ? "default" : "outline"}
+                    onClick={() => setTipPercentage(percent)}
+                    className="h-12"
+                  >
+                    {percent}%
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between text-sm pt-2">
+              <span className="text-muted-foreground">Сумма чаевых</span>
+              <span className="font-medium">{calculateTipAmount().toLocaleString('ru-RU')} ₽</span>
+            </div>
+          </Card>
+
           <Card className="p-4 bg-secondary/30">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
@@ -334,33 +650,25 @@ const Index = () => {
                 <span>{totalAmount.toLocaleString('ru-RU')} ₽</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Сервисный сбор</span>
-                <span>0 ₽</span>
+                <span className="text-muted-foreground">Чаевые</span>
+                <span>{calculateTipAmount().toLocaleString('ru-RU')} ₽</span>
               </div>
               <Separator className="my-2" />
               <div className="flex justify-between text-xl">
                 <span className="font-bold">Итого</span>
-                <span className="font-bold text-primary">{totalAmount.toLocaleString('ru-RU')} ₽</span>
+                <span className="font-bold text-primary">{calculatePaymentAmount().toLocaleString('ru-RU')} ₽</span>
               </div>
             </div>
           </Card>
         </div>
 
-        <div className="p-4 border-t space-y-3 bg-white">
+        <div className="p-4 border-t bg-white">
           <Button 
             className="w-full h-14 text-lg font-semibold"
             size="lg"
-            onClick={() => setShowPayment(true)}
+            onClick={handlePayment}
           >
-            Оплатить целиком {totalAmount.toLocaleString('ru-RU')} ₽
-          </Button>
-          <Button 
-            className="w-full h-14 text-lg font-semibold"
-            variant="outline"
-            size="lg"
-            onClick={() => setShowSplitOptions(true)}
-          >
-            Разделить счёт
+            Оплатить {calculatePaymentAmount().toLocaleString('ru-RU')} ₽
           </Button>
         </div>
       </div>
@@ -419,26 +727,26 @@ const Index = () => {
             </Card>
           ) : (
             <>
-              <Card 
-                className="border-2 border-green-500 bg-green-50 p-6 rounded-2xl cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => setShowBillDetails(true)}
-              >
-                <div className="flex flex-col items-center space-y-3">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                    <Icon name="CheckCircle2" size={32} className="text-green-600" />
-                  </div>
-                  <div className="text-center space-y-1">
-                    <h2 className="text-xl md:text-2xl font-bold text-gray-900">Счёт готов</h2>
-                    <p className="text-3xl font-bold text-primary">{totalAmount.toLocaleString('ru-RU')} ₽</p>
-                    <p className="text-sm text-gray-600">Нажмите для просмотра деталей</p>
+              <Card className="border-2 border-green-500 bg-green-50 p-4 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <Icon name="CheckCircle2" size={24} className="text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Счёт готов</p>
+                      <p className="text-2xl font-bold text-primary">{totalAmount.toLocaleString('ru-RU')} ₽</p>
+                    </div>
                   </div>
                 </div>
               </Card>
 
               <Button 
                 className="w-full h-14 rounded-2xl text-base md:text-lg font-semibold"
-                onClick={() => setShowPayment(true)}
+                variant="outline"
+                onClick={() => setShowBillDetails(true)}
               >
+                <Icon name="Receipt" size={20} className="mr-2" />
                 Оплатить счёт целиком
               </Button>
 
